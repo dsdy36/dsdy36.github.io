@@ -1,0 +1,24 @@
+{
+  "RQ1_3": [
+    {
+      "variant": "A",
+      "approach": "Using csv.reader with manual header skip and parameterized INSERT OR IGNORE",
+      "file": "RQ1_3_vA.py"
+    },
+    {
+      "variant": "B",
+      "approach": "Using csv.DictReader with dictionary key access and separate existence checks",
+      "file": "RQ1_3_vB.py"
+    },
+    {
+      "variant": "C",
+      "approach": "Using csv.reader with early continue for invalid rows and batch commit",
+      "file": "RQ1_3_vC.py"
+    },
+    {
+      "variant": "D",
+      "approach": "Using csv.DictReader with combined existence check in a single query",
+      "file": "RQ1_3_vD.py"
+    }
+  ]
+}

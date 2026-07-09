@@ -1,0 +1,24 @@
+{
+  "RQ1_2": [
+    {
+      "variant": "A",
+      "approach": "csv.reader with next() and numeric indexing",
+      "file": "RQ1_2_vA.py"
+    },
+    {
+      "variant": "B",
+      "approach": "csv.DictReader with dict key access",
+      "file": "RQ1_2_vB.py"
+    },
+    {
+      "variant": "C",
+      "approach": "csv.reader with early return on missing data",
+      "file": "RQ1_2_vC.py"
+    },
+    {
+      "variant": "D",
+      "approach": "csv.DictReader with existence check using fetchone()",
+      "file": "RQ1_2_vD.py"
+    }
+  ]
+}

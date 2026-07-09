@@ -1,0 +1,24 @@
+{
+  "RQ1_1": [
+    {
+      "variant": "A",
+      "approach": "csv.reader with next() and numeric indexing",
+      "file": "RQ1_1_vA.py"
+    },
+    {
+      "variant": "B",
+      "approach": "csv.DictReader with dict key access",
+      "file": "RQ1_1_vB.py"
+    },
+    {
+      "variant": "C",
+      "approach": "csv.reader with early continue and with-statement for connection",
+      "file": "RQ1_1_vC.py"
+    },
+    {
+      "variant": "D",
+      "approach": "csv.DictReader with try/except for database errors",
+      "file": "RQ1_1_vD.py"
+    }
+  ]
+}

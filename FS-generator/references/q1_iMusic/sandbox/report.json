@@ -1,0 +1,171 @@
+{
+  "template": "question\\code\\iMusic.py",
+  "ref_dir": "C:\\Users\\ZY C\\Desktop\\FURP\\FS_generater-v1\\references\\q1_iMusic",
+  "task1_results": [
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_1_vA.py"
+    },
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_1_vB.py"
+    },
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_1_vC.py"
+    },
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_1_vD.py"
+    },
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_2_vA.py"
+    },
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_2_vB.py"
+    },
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_2_vC.py"
+    },
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_2_vD.py"
+    },
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_3_vA.py"
+    },
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_3_vB.py"
+    },
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_3_vC.py"
+    },
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_3_vD.py"
+    },
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_4_vA.py"
+    },
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_4_vB.py"
+    },
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_4_vC.py"
+    },
+    {
+      "function": "update_playlist_tracks",
+      "compile_ok": true,
+      "exec_ok": true,
+      "error": null,
+      "file": "RQ1_4_vD.py"
+    }
+  ],
+  "task2_results": [
+    {
+      "task": "Task2",
+      "compile_ok": true,
+      "routes_tested": [
+        {
+          "path": "/statistics/",
+          "method": "GET",
+          "status": 404
+        },
+        {
+          "path": "/statistics/?genre=1&sort_by=NumberOfTracks&sort_order=ASC",
+          "method": "GET",
+          "status": 404
+        }
+      ],
+      "failures": [],
+      "error": null,
+      "assembled_from": {
+        "get_all_genres": "RQ2_1_vA.py",
+        "get_statistics": "RQ2_2_vA.py",
+        "statistics": "RQ2_4_vA.py"
+      }
+    }
+  ],
+  "task3_results": [
+    {
+      "task": "Task3",
+      "compile_ok": true,
+      "routes_tested": [
+        {
+          "path": "/playlists/",
+          "method": "GET",
+          "status": 404
+        }
+      ],
+      "failures": [],
+      "error": null,
+      "assembled_from": {
+        "get_all_playlists": "RQ3_1_vA.py",
+        "create_playlist": "RQ3_2_vA.py",
+        "rename_playlist": "RQ3_3_vA.py",
+        "add_tracks_by_genre": "RQ3_4_vA.py",
+        "_flash_and_redirect": "RQ3_5_vC.py"
+      }
+    }
+  ],
+  "summary": {
+    "total_variants": 18,
+    "passed": 18,
+    "failed": 0,
+    "pass_rate": 100.0
+  }
+}
