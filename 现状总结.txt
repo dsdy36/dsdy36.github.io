@@ -1,0 +1,118 @@
+老师好，
+
+向您汇报我目前在自动反馈签名（Feedback Signature, FS）生成方向上的研究进展、遇到的技术瓶颈，以及我对这个系统根本设计问题的反思。
+
+
+一、在做什么
+
+基于 TAFFIES 论文（Pike, Lee & Towey, 2022）的方法论，搭建了一条自动化的 FS 生成管线。整个系统由两部分组成：
+
+CW 端（训练数据生成）：用 AI 生成 50 个模拟学生提交，每个学生的 README 精确标注被注入了哪个错误或正确 pattern。例如 "use f-string ORDER BY without whitelist"。这一步的目的是确保有可靠的 ground truth，pattern 定义在 pattern_matrix.py 中，分为 hardcoded 变体和 AI fallback 两种来源。
+
+FS 端（反馈签名生成）：读取 50 个 README 中的 pattern label，按文本相似度将学生分组（cluster_by_pattern），每组发给 DeepSeek API，AI 同时看到该组所有学生的完整代码和 label 描述，生成一条 check function——一个 Python 函数（def check(code: str) -> tuple），检测代码中是否存在特定模式。格式已从早期 regex 进化为 check function（signature_type = "check_function"），内部使用 ast.parse/walk 和 re.search。未覆盖的学生通过 FCC（Feedback Coverage Checker）迭代补充，最多 3 轮。
+
+同时，搭建了一个行为沙箱（runtime/ 目录）：在 subprocess 中 mock 掉 sqlite3 和 Flask 依赖，向学生函数注入恶意输入（如把排序列名设为 "1; DROP TABLE Playlist--"），观察 SQL 注入是否真的成功了。200 次执行全部成功完成，能够干净地将学生分为 VULNERABLE 和 SAFE 两组，零歧义。
+
+
+二、当前结果
+
+在全量 14 个评分标准 × 50 个学生上，盲测结果：Precision = 0.15，Recall = 0.62，F1 = 0.24。正确检出 51 个错误，误报 300 个，漏报 31 个。
+
+14 个标准中只有 2 个勉强可用：RQ1_4（F1=0.75，检测 "return 没有返回值"）和 RQ1_3（F1=0.50，检测 "try/except IntegrityError"）。其他 12 个的 F1 均在 0.00 到 0.37 之间。300 个误报中 88% 来自 9 条过于宽泛的 check function。
+
+历史上只有 3 条 check function 达到过 Precision = 1.0：try_except_integrity_error、try_except_integrity_error_for 和 bare_return_without_value。它们的共同特征是：检测的是强语法信号——代码中存在独一无二的语法结构（try/except IntegrityError 语句块、裸 return 语句）明确标识了错误，不存在任何模糊性。
+
+
+三、理想 FS 的两种形态——当前项目均未实现
+
+理想的 FS 应该是两种形态的有机结合：
+
+形态 A（Literal mechanical matching）：保证 100% 行覆盖率，接受大量 FS 为 re.escape() 字面模式配以通用反馈文本。这种形态牺牲了反馈的针对性和教育意义，但确保了每个学生、每条评分标准都能被覆盖到。它的定位是"兜底"——当语义方法无法产出高质量 FS 时，至少不让任何学生漏掉评分。
+
+形态 B（Semantic pattern generation）：生成 TAFFIES 质量的 FS，用有意义的 Python check function 捕获编程概念，提供与 rubric 对齐的、有建设性的反馈，即使少数罕见或非常规的代码变体仍未被匹配。这种形态追求反馈的教育价值。
+
+当前项目只尝试了形态 B（通过 AI 生成 check function），完全没有实现形态 A 作为 fallback。具体来说：
+
+形态 A 的缺失：项目的早期版本中不存在任何 re.escape() 字面模式生成逻辑。但当前 plan_d.py 已实现 _apply_literal_fallback()（plan_d.py:1755-1916），在 run_plan_d() 第 2223 行被调用。该函数对评分关键性 criterion，当所有语义 FS 均失效时，自动提取 gap 学生的关键代码行做 re.escape() 字面匹配，配以通用反馈文本，实现了"形态 A"兜底机制。
+
+形态 B 的失败：AI 生成的 check function 质量方差极大。只有约 18%（3/17）能达到可用的精度。根本原因不是 AI 能力不足，而是很多评分标准的正确/错误代码在语法层面不存在可区分的特征——见下文第四节的详细分析。
+
+两种形态的结合机制缺失：理想的设计应该是：每个 criterion 首先生成形态 B 的语义 FS，然后通过质量门（gate）验证。通过门验证的 FS 正常使用；未通过的自动回退到形态 A——提取该 criterion 下所有 gap 学生的代码关键行，做 re.escape() 字面匹配，配以通用但正确的反馈文本（如"你的代码在此处与预期实现不一致，请对照 rubric 检查"）。当前项目中完全没有这个回退逻辑。
+
+
+四、为什么是根本性问题——以 RQ2_3 为例
+
+RQ2_3 的要求是 "ORDER BY 需要 whitelist 验证以防止 SQL 注入"。两个学生的代码在 SQL 拼接部分完全一样：
+
+S005（有漏洞）：
+    query += f" ORDER BY {sort_column} {sort_order}"
+    cursor.execute(query)
+
+S002（安全）：
+    if sort_column not in ALLOWED:
+        sort_column = 'p.Name'
+    query += f" ORDER BY {sort_column} {sort_order}"
+    cursor.execute(query)
+
+两条代码都用了 f-string 拼接 ORDER BY。区别仅仅是前面有没有验证逻辑。但验证逻辑的写法是开放集合——dict.get()、if/elif 链、set membership、函数封装——每一种都是合理的。AI 生成的 check function 只能用几个固定的正则或 AST 模式去匹配这个开放集合，结果必然是：漏掉某些没见过的验证写法（漏报），或者把写法不同但实际做了验证的代码标为错误（误报）。
+
+定量验证：对该 criterion 做了上下文敏感 pattern 分析，统计了 50 个学生代码中的各种语法特征在 TP 和 FP 中的分布——has_fstring_order 在 TP 中出现率 74%，在 FP 中出现率 75%，几乎完全重叠。has_whitelist 在 TP 中 26%，在 FP 中 21%，仅差 5%。不存在任何单一语法特征能将"有验证的正确代码"和"无验证的错误代码"可靠地区分开。
+
+根本矛盾：错误本质是"没有阻止 SQL 注入"——这是代码的行为属性（代码执行时会发生什么），无法从固定的语法特征（代码文本长什么样）中推导。14 个评分标准中有 13 个都属于这类"缺失行为"的问题。唯一的例外是 RQ1_3（try/except IntegrityError），因为"是否写了 try/except"本身就是一个语法特征。
+
+
+五、关于覆盖率和 FS 质量的权衡——当前项目未做系统性处理
+
+您提到的第二个问题——"What is an acceptable trade-off between coverage percentage and FS quality?"——涉及一个关键区分：评分性标准（marking-critical criteria）必须被覆盖，因为学生必须就每条评分标准收到分数和反馈；而信息性标准（informational criteria）的反馈是锦上添花，质量优先于覆盖。
+
+当前项目完全没有实现这个区分。具体表现为：
+
+第一，所有 14 条 criterion 在管线中被同等对待。FCC 迭代对每一条标准执行相同的补缺逻辑，不区分该标准是否影响评分。Broad Filter 对所有负向 FS 使用统一的 40% 匹配率阈值，不区分 criterion 的重要性。Criteria Filter 虽然移除了"没有任何学生有 bad pattern 的 criterion"下的负向 FS，但这是基于 ground truth 的事后清理，而不是基于 criterion 重要性的主动权衡。
+
+第二，FS 的 scoring_weight 字段（1.0/0.5/0.0）可以用于实现覆盖率-质量权衡，但它的赋值逻辑只基于技术验证（是否匹配 reference、是否匹配 template、是否过于宽泛），不基于 criterion 的评分重要性。一个对评分至关重要的 criterion 和一条信息性的 criterion，它们的 FS 可能因为同样的技术原因被降权。
+
+第三，没有"兜底覆盖"机制。对于必须被评分的 criterion，如果所有语义 FS 都未通过质量门，系统不会自动生成字面匹配 FS 来保证该 criterion 的覆盖。当前行为是：该 criterion 下所有负向 FS 被移除后，学生代码无法被任何 FS 匹配，评分系统对该 criterion 无反馈可给。这是不可接受的——对于评分性标准，收到一条"你的实现可能与预期有差异"的通用反馈，远好于收不到任何反馈。
+
+
+六、FS-generator 流程中 Gate 验证标准的现状
+
+Gate 验证标准分散在多个文件中，缺乏统一的 checkpoint 框架。历史上设计过但未被完整保留的标准包括：
+
+目前实际生效的验证步骤（按管线顺序）：
+
+第一步，cluster 级别验证（taffies_fs_generator.py 的 _validate_and_build_fs）：对每个 cluster 生成的 check function 做三重检查——Python 语法正确性（ast.parse 不报错）、可执行性（exec 不抛异常）、必须在 representative 学生代码上返回 True。任一项不通过则丢弃该 FS。这一步是有效的，但它只验证了"FS 能匹配代表学生"，不能保证 FS 在非代表学生上没有误报。
+
+第二步，管线级验证（taffies_fs_generator.py 的 validate_taffies_fs）：负向 FS 匹配 reference 代码则降权至 0.5；正向 FS 匹配 template 代码则降权至 0.5；匹配零学生的 FS 直接移除。这个验证的核心思想是"负向 FS 不应该匹配正确实现，正向 FS 不应该匹配模板骨架"。它保留了有问题的 FS（降权而非删除），这是合理的——reference 代码不代表所有正确实现。
+
+第三步，Criteria Filter（plan_d.py 的 _remove_negative_fs_for_no_bad_criteria）：遍历所有 README，如果某个 criterion 下没有任何学生有 bad pattern，则移除该 criterion 的所有负向 FS。这是确定性的、100% 可靠的清理步骤。
+
+第四步，Broad Filter（plan_d.py 的 _apply_broad_negative_filter）：匹配率超过 40% 的负向 FS 被降权至 0.0。理由是：如果一个负向 FS 匹配了超过 40% 的学生，它太大锅饭了，无法提供有意义的区分。已支持 check_function 和 regex 两种签名类型（plan_d.py:1498-1520）。
+
+第五步，Variable Generalisation（plan_d.py 的 _apply_variable_generalisation）：将学生代码中非白名单的变量名替换为 \w+。同样只对 regex 生效，不处理 check_function。由于当前管线已转向 check function 为主，这一步的实际影响范围有限。
+
+第六步，Round 4 精炼（plan_d.py 调用 round4_refine.py）：对高 FPR 的负向 FS，将 TP 和 FP 代码示例发给 AI，要求收紧正则。验证标准是"必须保留所有 TP，必须消除所有 FP"。同样只对 regex 生效。
+
+第七步，Round 5 精炼（独立的 round5_refine.py）：和 Round 4 相同的思想但用于 check function。最多 5 轮迭代。结果：8 条候选 FS 中，0 条达到 FPR=0%，3 条有所改善，5 条无改善。
+
+已被显式跳过的 Gate：
+
+Late-Stage MATCHES_NOTHING Gate：在 plan_d.py 第 2226-2300 行实际处于活跃状态，在 run_plan_d() 中被调用。该 gate 在全部学生样本上检查每条 FS 是否至少匹配一名学生（同时支持 check_function 和 regex 类型），匹配零学生的 FS 被移除（_scoring_weight = 0.0）。
+
+apply_quality_gates（ai_pipeline.py 第 3624 行）：在 Plan D 管线中被跳过（plan_d.py 第 2214 行注释："apply_quality_gates kept in codebase but not called in Plan D pipeline"）。该函数包含变量名泛化、去重、escape 修复、权重分配等功能。其中变量名泛化和去重已被 plan_d.py 中的独立步骤替代（_deduplicate_fs 在 plan_d.py:1415，_apply_variable_generalisation 在 plan_d.py:1578），两者均支持 check_function 和 regex 类型。
+
+总体而言，Gate 验证标准是"存在但不系统"的状态。每个 gate 的触发条件、处理策略（移除 vs 降权 vs 保留标记）和适用范围（regex only vs check function）不一致，且缺乏整体文档说明哪些 gate 在哪些条件下生效。
+
+
+七、未实现的方案 8 和当前技术瓶颈总结
+
+CLAUDE.md 中详细设计的"方案 8：CW 确定性注入 + 对比挖掘 + 行为沙箱混合方案"完全没有实现。核心组件 pattern_injector.py 不存在，runtime/contrastive_miner.py 不存在，特征增强的 FS 生成 prompt 也未修改。该方案的设计逻辑是正确的——通过在 CW 端确定性注入来制造干净对比对（vulnerable/safe 代码只在关键 pattern 上有差异），然后用对比挖掘提取真正区分性的语法特征——但它停留在设计阶段。
+
+当前三个路径各有困境，且这些困境不仅是工程问题，更反映了设计层面的缺失：
+
+第一，纯语义 check function：AI 生成的 check function 已触及 F1 约 0.3 的天花板。这不是 AI 模型能力的问题，而是任务本身在信息论意义上不可解——多个 criterion 的"正确"和"错误"代码在语法空间中的分布完全重叠。继续增加 prompt 工程或精炼轮次不会改变这个根本约束。
+
+第二，行为沙箱：已经证明可以在 subprocess 隔离环境中可靠执行学生代码并产出准确的 VULNERABLE/SAFE 标签（200/200 成功）。但存在两个工程障碍——AI 无法生成包含完整 mock 层的 check function（3/4 失败），且部分 criterion（如 RQ1_1 "使用 csv 模块"、RQ1_2 "关闭数据库连接"）在行为层面也无法测试，因为正确和错误实现产生相同的可观测输出。更重要的是，行为沙箱产出的是标签而非语法特征——它告诉你"这个学生错了"，但无法直接转化为"用什么样的代码检测逻辑来识别这个错误"。
+
+第三，"人手写模板 + AI 匹配"：这是最务实的方案。人手写针对每个 criterion 的确定性检测模板（既包括语法特征也包括行为测试），AI 的角色退化为将学生代码与模板匹配。它放弃了"AI 自动发现 pattern"的愿景，但可能实际可用。
+
+最核心的技术瓶颈可以总结为一句话：FS 的理想形态是语义检测（形态 B）和字面兜底（形态 A）的结合，但当前项目只做了形态 B，且形态 B 本身因为多个 criterion 在语法空间中的不可区分性而只能达到 F1 约 0.3。在缺少 coverage-quality 差异化策略的情况下，评分性标准的覆盖需求无法被满足；在缺少统一 gate 框架的情况下，FS 质量的验证是不完整和不一致的。这三个设计层面的缺失——criterion 分级、gate 系统化、CW 数据质量——是当前项目从"研究原型"走向"可部署系统"之间最关键的差距。
